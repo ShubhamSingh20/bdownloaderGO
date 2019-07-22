@@ -9,12 +9,14 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
 	humanize "github.com/dustin/go-humanize"
 	color "github.com/gookit/color"
 )
 
-//var waitGroup = sync.WaitGroup{}
+var waitGroup = sync.WaitGroup{}
 
 //WriteCounter writing the progress
 type WriteCounter struct {
@@ -38,13 +40,9 @@ func (wc *WriteCounter) Write(p []byte) (int, error) {
 }
 
 /*
-	contentDepo := resp.Header.Get("Content-Disposition")
-	filename := strings.Replace(contentDepo, "attachment; filename=", "", -1)
-	folderpath = filepath.Join(folderpath, filename)
-
 	buff, _ := ioutil.ReadFile(tmpFile.Name())
-		kind, _ := filetype.Match(buff)
-		+ kind.Extension
+	kind, _ := filetype.Match(buff)
+	+ kind.Extension
 
 */
 func getFileNameFromHeader(resp *http.Response) string {
@@ -78,7 +76,6 @@ func converTempFileToOriginalAndCloseFile(tmpFile *os.File, currentfilepath stri
 	}
 
 	resp.Body.Close()
-	//waitGroup.Done()
 }
 
 func downloadFile(url, currentfilepath string) error {
@@ -96,10 +93,13 @@ func downloadFile(url, currentfilepath string) error {
 	defer converTempFileToOriginalAndCloseFile(tmpFile, currentfilepath, resp)
 
 	counter := &WriteCounter{url: url}
-	_, err = io.Copy(tmpFile, io.TeeReader(resp.Body, counter))
-	if err != nil {
-		return err
-	}
+
+	func(tmpFile *os.File, counter *WriteCounter, resp *http.Response) {
+		_, err = io.Copy(tmpFile, io.TeeReader(resp.Body, counter))
+		if err != nil {
+			log.Fatal(err)
+		}
+	}(tmpFile, counter, resp)
 
 	fmt.Println()
 
@@ -111,14 +111,22 @@ func downloadFile(url, currentfilepath string) error {
 }
 
 func downloadFromURLSlice(filepath string, downloadURLSlice []string) {
+	start := time.Now()
+	errch := make(chan error, len(downloadURLSlice))
 	for _, url := range downloadURLSlice {
-		func(url string) {
-			//waitGroup.Add(1)
+		waitGroup.Add(1)
+		go func(url string) {
 			err := downloadFile(url, filepath)
+			defer waitGroup.Done()
 			if err != nil {
-				fmt.Println(err)
+				errch <- err
+				return
 			}
 		}(url)
-		//waitGroup.Wait()
+
 	}
+	waitGroup.Wait()
+
+	elapsed := time.Since(start)
+	log.Printf("Time taken %s", elapsed)
 }
