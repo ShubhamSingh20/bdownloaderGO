@@ -90,16 +90,20 @@ func downloadFile(url, currentfilepath string) error {
 		return err
 	}
 
+	if resp.StatusCode != 200 {
+		color.Red.Println("[-] Could'nt download ", url)
+		return err
+	}
+
 	defer converTempFileToOriginalAndCloseFile(tmpFile, currentfilepath, resp)
 
 	counter := &WriteCounter{url: url}
 
-	func(tmpFile *os.File, counter *WriteCounter, resp *http.Response) {
-		_, err = io.Copy(tmpFile, io.TeeReader(resp.Body, counter))
-		if err != nil {
-			log.Fatal(err)
-		}
-	}(tmpFile, counter, resp)
+	_, err = io.Copy(tmpFile, io.TeeReader(resp.Body, counter))
+
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	fmt.Println()
 
@@ -128,5 +132,5 @@ func downloadFromURLSlice(filepath string, downloadURLSlice []string) {
 	waitGroup.Wait()
 
 	elapsed := time.Since(start)
-	log.Printf("Time taken %s", elapsed)
+	color.Green.Printf("Time taken for completing download %s", elapsed)
 }
